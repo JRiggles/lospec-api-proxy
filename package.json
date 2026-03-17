@@ -1,4 +1,8 @@
 {
+  "name": "lospec-api-proxy",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
   "devDependencies": {
     "@types/node": "^25.5.0",
     "dotenv": "^17.3.1",
