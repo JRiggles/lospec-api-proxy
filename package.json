@@ -2,15 +2,13 @@
   "name": "lospec-api-proxy",
   "private": true,
   "type": "module",
-  "version": "0.0.1",
-  "devDependencies": {
-    "@types/node": "^25.5.0",
-    "dotenv": "^17.3.1",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
-  },
   "scripts": {
-    "dev": "echo TODO: implement development server",
-    "test": "echo TODO: implement tests"
+    "dev": "vercel dev",
+    "build": "echo no build step needed",
+    "start": "vercel dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/node": "^25.5.0"
   }
 }
