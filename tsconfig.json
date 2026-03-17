@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es2020",                         // Specify ECMAScript target version
+    "module": "commonjs",                       // Specify module code generation
+    "rootDir": "api",                           // Root of the input files
+    "outDir": "dist",                           // Redirect output structure to the directory
+    "strict": true,                             // Enable all strict type-checking options
+    "esModuleInterop": true,                    // Enables emit interop between ESM and CJS
+    "skipLibCheck": true,                       // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true,   // Enforce consistent file casing
+    "types": [ "node" ]                         // Include type definitions for Node.js
+  },
+}
