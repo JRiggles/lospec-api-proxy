@@ -74,10 +74,11 @@ export default async function handler(req: Request): Promise<Response> {
     const cleanedPath = cleanPath(url.pathname);
     const debug = url.searchParams.has('debug');
 
-    // Forward only client-intended query params
-    const forwardedSearchParams = new URLSearchParams(url.searchParams);
-    forwardedSearchParams.delete('debug');
-    forwardedSearchParams.delete('path');  // Vercel internal
+    // Forward only client-intended query params (i.e. query params NOT managed by Vercel)
+    const forwardedSearchParams = new URLSearchParams();
+    url.searchParams.forEach((value, key) => {
+        if (key !== 'debug' && key !== 'path') forwardedSearchParams.append(key, value);
+    });
 
     const upstreamUrl = `${API_BASE_URL}/api/${cleanedPath}${forwardedSearchParams.toString() ? '?' + forwardedSearchParams.toString() : ''}`;
 
