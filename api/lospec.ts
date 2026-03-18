@@ -1,53 +1,79 @@
 export const config = {runtime: 'edge'};
 
 const UPSTREAM_BASE_URL = 'https://api.lospec.com';
+
+function normalizeEnvString(value: string | undefined): string {
+    if (!value) {
+        return '';
+    }
+
+    const trimmed = value.trim();
+    if (
+        (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'"))
+    ) {
+        return trimmed.slice(1, -1);
+    }
+
+    return trimmed;
+}
+
 // environment variables
 const LOSPEC_API_KEY = process.env.LOSPEC_API_KEY;
-const REQUIRED_USER_AGENT = process.env.REQUIRED_USER_AGENT || "";
-const CACHE_TTL = process.env.CACHE_TTL || "86400";
-const SWR_TTL = process.env.SWR_TTL || "3600";
-const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || "5000", 10);
+const REQUIRED_USER_AGENT = normalizeEnvString(process.env.REQUIRED_USER_AGENT);
+const CACHE_TTL = process.env.CACHE_TTL || '86400';
+const SWR_TTL = process.env.SWR_TTL || '3600';
+const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '5000', 10);
 
 // validate environment on initialization
 if (!LOSPEC_API_KEY) {
-    throw new Error("Missing LOSPEC_API_KEY environment variable.");
+    throw new Error('Missing LOSPEC_API_KEY environment variable.');
 }
 
+function getSubPath(requestUrl: URL): string {
+    const rewrittenSegments = requestUrl.searchParams.get('segments');
+    const dynamicPath = requestUrl.searchParams.get('...path');
+    if (rewrittenSegments) {
+        return rewrittenSegments.replace(/^\/+|\/+$/g, '');
+    }
+    if (dynamicPath) {
+        return dynamicPath.replace(/^\/+|\/+$/g, '');
+    }
+    return requestUrl.pathname.replace(/^\/api\/lospec\/?/, '').replace(/^\/+|\/+$/g, '');
+}
 
 export default async function handler(req: Request) {
-    // only allow GET requests (this is all the Lospec API currently supports anyway)
     if (req.method !== 'GET') {
         return new Response('Method Not Allowed', { status: 405 });
     }
 
-    // resolve endpoint and query params from the incoming request URL
     const requestUrl = new URL(req.url, UPSTREAM_BASE_URL);
     const isDebug = ['1', 'true', 'yes'].includes(
         (requestUrl.searchParams.get('debug') || '').toLowerCase()
     );
 
-    // validate the user-agent if REQUIRED_USER_AGENT is set
-    const clientUA = req.headers.get('user-agent') || "";
-    const isUserAgentAllowed = REQUIRED_USER_AGENT === "" || clientUA === REQUIRED_USER_AGENT;
+    const clientUA = req.headers.get('user-agent') || '';
+    const isUserAgentAllowed = REQUIRED_USER_AGENT === '' || clientUA === REQUIRED_USER_AGENT;
+    // DEBUG: temporarily disablu user agen check
     // if (!isDebug && !isUserAgentAllowed) {
     //     return new Response('Forbidden', { status: 403 });
     // }
 
-    const { pathname } = requestUrl;
-    const subPath = pathname.replace(/^\/api\/lospec\//, '');
-    const isHealth = subPath === 'health' || subPath === 'health/';
+    const subPath = getSubPath(requestUrl);
+    const isHealth = subPath === 'health';
+
     const upstreamSearchParams = new URLSearchParams(requestUrl.searchParams);
     upstreamSearchParams.delete('debug');
+    upstreamSearchParams.delete('segments');
+    upstreamSearchParams.delete('...path');
 
     const upstreamUrl = new URL(isHealth ? '/health' : `/${subPath}`, UPSTREAM_BASE_URL);
     if (!isHealth) {
         upstreamUrl.search = upstreamSearchParams.toString();
     }
 
-    // prepare the proxy headers
     const proxyHeaders = new Headers();
     if (!isHealth) {
-        // only add the Authorization header / API key for non-health endpoints
         proxyHeaders.set('Authorization', `Bearer ${LOSPEC_API_KEY}`);
     }
 
@@ -80,25 +106,25 @@ export default async function handler(req: Request) {
                 },
                 timeoutMs: FETCH_TIMEOUT_MS,
             },
-            cache: isHealth ? {
-                cacheControl: 'no-store, no-cache, must-revalidate',
-                cdnCacheControl: 'no-store',
-                vercelCdnCacheControl: 'no-store',
-            } : {
-                vercelCdnCacheControl:
-                    `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`,
-            },
+            cache: isHealth
+                ? {
+                    cacheControl: 'no-store, no-cache, must-revalidate',
+                    cdnCacheControl: 'no-store',
+                    vercelCdnCacheControl: 'no-store',
+                }
+                : {
+                    vercelCdnCacheControl:
+                        `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`,
+                },
         }, {
             status: 200,
             headers: debugHeaders,
         });
     }
 
-    // set up a timeout for the upstream request
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    // make the upstream request
     try {
         const upstreamRes = await fetch(upstreamUrl, {
             method: 'GET',
@@ -106,10 +132,6 @@ export default async function handler(req: Request) {
             signal: controller.signal,
         });
 
-        // configure caching headers for the response on non-health endpoints
-        // NOTE: we don't want to cache the health endpoint, to ensure it always reflects the
-        // current status of the API
-        // (see https://vercel.com/docs/caching/cache-control-headers for details)
         const resHeaders = new Headers(upstreamRes.headers);
         if (isHealth) {
             resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -122,13 +144,11 @@ export default async function handler(req: Request) {
             );
         }
 
-        // stream the upstream body through without buffering it in the proxy
         return new Response(upstreamRes.body, {
             status: upstreamRes.status,
             statusText: upstreamRes.statusText,
             headers: resHeaders,
         });
-
     } catch (err: any) {
         if (err.name === 'AbortError') {
             return new Response('Upstream Timeout', { status: 504 });

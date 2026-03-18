@@ -1,4 +1,10 @@
 {
   "buildCommand": "",
-  "outputDirectory": null
+  "outputDirectory": null,
+  "rewrites": [
+    {
+      "source": "/api/lospec/:segments*",
+      "destination": "/api/lospec?segments=:segments*"
+    }
+  ]
 }
