@@ -20,20 +20,22 @@ export default async function handler(req: Request) {
         return new Response('Method Not Allowed', { status: 405 });
     }
 
-    // validate the user-agent if REQUIRED_USER_AGENT is set
-    const clientUA = req.headers.get('user-agent') || "";
-    if (REQUIRED_USER_AGENT !== "" && clientUA !== REQUIRED_USER_AGENT) {
-        return new Response('Forbidden', { status: 403 });
-    }
-
     // resolve endpoint and query params from the incoming request URL
     const requestUrl = new URL(req.url, UPSTREAM_BASE_URL);
-    const { pathname } = requestUrl;
-    const subPath = pathname.replace(/^\/api\/lospec\//, '');
-    const isHealth = subPath === 'health' || subPath === 'health/';
     const isDebug = ['1', 'true', 'yes'].includes(
         (requestUrl.searchParams.get('debug') || '').toLowerCase()
     );
+
+    // validate the user-agent if REQUIRED_USER_AGENT is set
+    const clientUA = req.headers.get('user-agent') || "";
+    const isUserAgentAllowed = REQUIRED_USER_AGENT === "" || clientUA === REQUIRED_USER_AGENT;
+    if (!isDebug && !isUserAgentAllowed) {
+        return new Response('Forbidden', { status: 403 });
+    }
+
+    const { pathname } = requestUrl;
+    const subPath = pathname.replace(/^\/api\/lospec\//, '');
+    const isHealth = subPath === 'health' || subPath === 'health/';
     const upstreamSearchParams = new URLSearchParams(requestUrl.searchParams);
     upstreamSearchParams.delete('debug');
 
@@ -64,6 +66,11 @@ export default async function handler(req: Request) {
                 incomingUrl: requestUrl.toString(),
                 subPath,
                 isHealth,
+                userAgent: clientUA,
+            },
+            accessControl: {
+                requiredUserAgent: REQUIRED_USER_AGENT || null,
+                isUserAgentAllowed,
             },
             outboundRequest: {
                 url: upstreamUrl.toString(),
