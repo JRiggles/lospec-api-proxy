@@ -126,6 +126,7 @@ export default async function handler(req: Request): Promise<Response> {
     */
     try {
         const upstreamUrl = `${API_BASE_URL}/api/${cleanedPath}${url.search}`;
+        console.log(`Proxying request to: ${upstreamUrl}`);
         const upstreamRes = await fetch(upstreamUrl, {
             method: 'GET',
             headers: {
