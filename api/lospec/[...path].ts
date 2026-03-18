@@ -1,145 +1,133 @@
-export const config = { runtime: "edge" };
+export const config = {runtime: 'edge'};
 
-const API_BASE_URL = 'https://api.lospec.com';
-const API_VERSION = 'v1';
-const API_KEY = process.env.LOSPEC_API_KEY;
-const IS_CACHING_ENABLED = process.env.ENABLE_CACHING !== 'false';
-const CACHE_TTL = parseInt(process.env.CACHE_DURATION || '3600', 10);
-const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '5000', 10);
+const UPSTREAM_BASE_URL = 'https://api.lospec.com';
+// environment variables
+const LOSPEC_API_KEY = process.env.LOSPEC_API_KEY;
+const REQUIRED_USER_AGENT = process.env.REQUIRED_USER_AGENT || "";
+const CACHE_TTL = process.env.CACHE_TTL || "86400";
+const SWR_TTL = process.env.SWR_TTL || "3600";
+const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || "5000", 10);
 
-/**
-* Allowed API endpoints.
-* Supports exact matches and slug subpaths (e.g., /palettes/{slug}).
-*/
-const API_ENDPOINTS = [
-    // Palettes
-    `${API_VERSION}/palettes`,
-    `${API_VERSION}/palettes/daily`,
-    `${API_VERSION}/palettes/random`,
-    `${API_VERSION}/palettes/suggest`,
-    // Daily Tags
-    `${API_VERSION}/dailytags`,
-    `${API_VERSION}/dailytags/daily`,
-    // User
-    `${API_VERSION}/user`,
-    `${API_VERSION}/usage`,
-    // System
-    'health'
-];
-
-/**
-* Normalizes an incoming Vercel path for proxying to Lospec API.
-* - Strips /api/lospec prefix
-* - Removes leading/trailing slashes
-*/
-function cleanPath(pathname: string): string {
-    return pathname.replace(/^\/api\/lospec\/?/, '').replace(/^\/+|\/+$/g, '');
+// validate environment on initialization
+if (!LOSPEC_API_KEY) {
+    throw new Error("Missing LOSPEC_API_KEY environment variable.");
 }
 
-/**
-* Checks if a normalized path is allowed according to API_ENDPOINTS.
-* Supports slug subpaths automatically.
-*/
-function isAllowed(path: string): boolean {
-    return API_ENDPOINTS.some(ep => path === ep || path.startsWith(ep + '/'));
-}
 
-/**
-* Generates caching headers for GET requests.
-*/
-function getCacheHeaders(reqMethod: string, resOk: boolean): Record<string, string> {
-    if (IS_CACHING_ENABLED && reqMethod === 'GET' && resOk) {
-        return {
-            'Cache-Control': `public, s-maxage=${CACHE_TTL}, stale-while-revalidate=60, max-age=0, must-revalidate`,
-            'Vercel-CDN-Cache-Control': `max-age=${CACHE_TTL}`,
-            'Vary': 'Accept-Encoding'
-        };
-    }
-    return {};
-}
-
-/**
-* Edge Function handler for the Lospec API proxy.
-* Only GET requests allowed. Debug mode available via ?debug=1.
-*/
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(req: Request) {
+    // only allow GET requests (this is all the Lospec API currently supports anyway)
     if (req.method !== 'GET') {
-        return new Response(JSON.stringify({ error: 'Only GET requests are allowed' }), {
-            status: 405,
-            headers: { 'Content-Type': 'application/json' }
-        });
+        return new Response('Method Not Allowed', { status: 405 });
     }
 
-    const url = new URL(req.url);
-    const cleanedPath = cleanPath(url.pathname);
-    const debug = url.searchParams.has('debug');
+    // validate the user-agent if REQUIRED_USER_AGENT is set
+    const clientUA = req.headers.get('user-agent') || "";
+    if (REQUIRED_USER_AGENT && clientUA !== REQUIRED_USER_AGENT) {
+        return new Response('Forbidden', { status: 403 });
+    }
 
-    // Forward only client-intended query params (i.e. query params NOT managed by Vercel)
-    const forwardedSearchParams = new URLSearchParams();
-    url.searchParams.forEach((value, key) => {
-        if (key !== 'debug' && key !== 'path') forwardedSearchParams.append(key, value);
-    });
+    // resolve endpoint and query params from the incoming request URL
+    const requestUrl = new URL(req.url, UPSTREAM_BASE_URL);
+    const { pathname } = requestUrl;
+    const subPath = pathname.replace(/^\/api\/lospec\//, '');
+    const isHealth = subPath === 'health' || subPath === 'health/';
+    const isDebug = ['1', 'true', 'yes'].includes(
+        (requestUrl.searchParams.get('debug') || '').toLowerCase()
+    );
+    const upstreamSearchParams = new URLSearchParams(requestUrl.searchParams);
+    upstreamSearchParams.delete('debug');
 
-    const upstreamUrl = `${API_BASE_URL}/api/${cleanedPath}${forwardedSearchParams.toString() ? '?' + forwardedSearchParams.toString() : ''}`;
+    const upstreamUrl = new URL(isHealth ? '/health' : `/${subPath}`, UPSTREAM_BASE_URL);
+    if (!isHealth) {
+        upstreamUrl.search = upstreamSearchParams.toString();
+    }
 
-    // Debug mode: return upstream URL without fetching
-    if (debug) {
-        return new Response(JSON.stringify({
-            cleanedPath,
-            upstreamUrl,
-            apiKeyDefined: !!API_KEY,
-            incomingUrl: req.url
-        }, null, 2), {
+    // prepare the proxy headers
+    const proxyHeaders = new Headers();
+    if (!isHealth) {
+        // only add the Authorization header / API key for non-health endpoints
+        proxyHeaders.set('Authorization', `Bearer ${LOSPEC_API_KEY}`);
+    }
+
+    if (isDebug) {
+        const debugHeaders = new Headers({
+            'Cache-Control': 'no-store, no-cache, must-revalidate',
+            'Content-Type': 'application/json; charset=utf-8',
+            'CDN-Cache-Control': 'no-store',
+            'Vercel-CDN-Cache-Control': 'no-store',
+        });
+
+        return Response.json({
+            debug: true,
+            request: {
+                method: 'GET',
+                incomingUrl: requestUrl.toString(),
+                subPath,
+                isHealth,
+            },
+            outboundRequest: {
+                url: upstreamUrl.toString(),
+                method: 'GET',
+                headers: {
+                    authorization: proxyHeaders.has('Authorization') ? 'Bearer [redacted]' : null,
+                },
+                timeoutMs: FETCH_TIMEOUT_MS,
+            },
+            cache: isHealth ? {
+                cacheControl: 'no-store, no-cache, must-revalidate',
+                cdnCacheControl: 'no-store',
+                vercelCdnCacheControl: 'no-store',
+            } : {
+                vercelCdnCacheControl:
+                    `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`,
+            },
+        }, {
             status: 200,
-            headers: { 'Content-Type': 'application/json' }
+            headers: debugHeaders,
         });
     }
 
-    // Allowlist check
-    if (!isAllowed(cleanedPath)) {
-        return new Response(JSON.stringify({ error: 'Forbidden path' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
-    }
+    // set up a timeout for the upstream request
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-    // Health endpoint (no auth)
-    if (cleanedPath === 'health') {
-        try {
-            const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
-            const data = await res.text();
-            return new Response(data, { status: res.status, headers: { 'Content-Type': 'application/json' } });
-        } catch {
-            return new Response(JSON.stringify({ error: 'Upstream health check failed' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
-        }
-    }
-
-    if (!API_KEY) {
-        return new Response(JSON.stringify({ error: 'Missing Lospec API key' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    // Forward GET request to Lospec API
+    // make the upstream request
     try {
         const upstreamRes = await fetch(upstreamUrl, {
             method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'User-Agent': req.headers.get('user-agent') || 'lospec-proxy'
-            },
-            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+            headers: proxyHeaders,
+            signal: controller.signal,
         });
 
-        const body = await upstreamRes.text();
-        return new Response(body, {
+        // configure caching headers for the response on non-health endpoints
+        // NOTE: we don't want to cache the health endpoint, to ensure it always reflects the
+        // current status of the API
+        // (see https://vercel.com/docs/caching/cache-control-headers for details)
+        const resHeaders = new Headers(upstreamRes.headers);
+        if (isHealth) {
+            resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+            resHeaders.set('CDN-Cache-Control', 'no-store');
+            resHeaders.set('Vercel-CDN-Cache-Control', 'no-store');
+        } else {
+            resHeaders.set(
+                'Vercel-CDN-Cache-Control',
+                `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`
+            );
+        }
+
+        // stream the upstream body through without buffering it in the proxy
+        return new Response(upstreamRes.body, {
             status: upstreamRes.status,
-            headers: {
-                'Content-Type': 'application/json',
-                ...getCacheHeaders(req.method, upstreamRes.ok)
-            }
+            statusText: upstreamRes.statusText,
+            headers: resHeaders,
         });
+
     } catch (err: any) {
-        const isTimeout = err?.name === 'TimeoutError';
-        return new Response(JSON.stringify({ error: isTimeout ? 'Upstream Timeout' : 'Proxy Failed' }), {
-            status: isTimeout ? 504 : 502,
-            headers: { 'Content-Type': 'application/json' }
-        });
+        if (err.name === 'AbortError') {
+            return new Response('Upstream Timeout', { status: 504 });
+        }
+        return new Response('Upstream Error', { status: 502 });
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
