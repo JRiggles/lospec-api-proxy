@@ -127,6 +127,16 @@ export default async function handler(req: Request): Promise<Response> {
     try {
         const upstreamUrl = `${API_BASE_URL}/api/${cleanedPath}${url.search}`;
 
+        // DEBUG: return the upstream URL without calling fetch
+        return new Response(JSON.stringify({
+            upstreamUrl: upstreamUrl,
+            cleanedPath,
+            incomingUrl: req.url
+        }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' }
+        });
+
         const upstreamRes = await fetch(upstreamUrl, {
             method: 'GET',
             headers: {
