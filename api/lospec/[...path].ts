@@ -29,9 +29,9 @@ export default async function handler(req: Request) {
     // validate the user-agent if REQUIRED_USER_AGENT is set
     const clientUA = req.headers.get('user-agent') || "";
     const isUserAgentAllowed = REQUIRED_USER_AGENT === "" || clientUA === REQUIRED_USER_AGENT;
-    if (!isDebug && !isUserAgentAllowed) {
-        return new Response('Forbidden', { status: 403 });
-    }
+    // if (!isDebug && !isUserAgentAllowed) {
+    //     return new Response('Forbidden', { status: 403 });
+    // }
 
     const { pathname } = requestUrl;
     const subPath = pathname.replace(/^\/api\/lospec\//, '');
