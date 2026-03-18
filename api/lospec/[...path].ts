@@ -74,11 +74,18 @@ export default async function handler(req: Request): Promise<Response> {
     const cleanedPath = cleanPath(url.pathname);
     const debug = url.searchParams.has('debug');
 
-    // DEBUG mode: show what the proxy *would* request upstream
+    // Forward only client-intended query params
+    const forwardedSearchParams = new URLSearchParams(url.searchParams);
+    forwardedSearchParams.delete('debug');
+    forwardedSearchParams.delete('path');  // Vercel internal
+
+    const upstreamUrl = `${API_BASE_URL}/api/${cleanedPath}${forwardedSearchParams.toString() ? '?' + forwardedSearchParams.toString() : ''}`;
+
+    // Debug mode: return upstream URL without fetching
     if (debug) {
         return new Response(JSON.stringify({
             cleanedPath,
-            upstreamUrl: `${API_BASE_URL}/api/${cleanedPath}${url.search}`,
+            upstreamUrl,
             apiKeyDefined: !!API_KEY,
             incomingUrl: req.url
         }, null, 2), {
@@ -109,7 +116,6 @@ export default async function handler(req: Request): Promise<Response> {
 
     // Forward GET request to Lospec API
     try {
-        const upstreamUrl = `${API_BASE_URL}/api/${cleanedPath}${url.search}`;
         const upstreamRes = await fetch(upstreamUrl, {
             method: 'GET',
             headers: {
