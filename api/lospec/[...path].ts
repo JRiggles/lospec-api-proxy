@@ -4,12 +4,12 @@ const API_BASE_URL = 'https://api.lospec.com';
 const API_VERSION = process.env.API_VERSION || 'v1';
 const API_KEY = process.env.LOSPEC_API_KEY;
 const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '5000', 10);
-const CACHE_TTL = process.env.CACHE_DURATION || '3600';
+const CACHE_TTL = parseInt(process.env.CACHE_DURATION || '3600', 10);
 const IS_CACHING_ENABLED = process.env.ENABLE_CACHING !== 'false';
 
 /**
 * Allowed API endpoints (after stripping `/api/lospec/`).
-* Supports exact match and slug subpaths (e.g., /palettes/{slug}).
+* Supports exact matches and slug subpaths (e.g., /palettes/{slug}).
 */
 const API_ENDPOINTS = [
     // Palettes
@@ -28,37 +28,35 @@ const API_ENDPOINTS = [
 ];
 
 /**
-* Normalizes the incoming request path by stripping the Vercel deployment prefix
-* and removing leading/trailing slashes for consistent allowlist matching.
+* Normalizes an incoming Vercel path for proxying to Lospec API.
+* - Strips /api/lospec prefix
+* - Removes leading/trailing slashes
 *
-* @param pathname - The raw URL pathname from the incoming request.
-* @returns Normalized path string suitable for allowlist validation.
+* @param pathname - Raw incoming URL pathname
+* @returns Normalized path string
 */
-function normalizePath(pathname: string) {
-    let path = pathname.replace(/^\/api\/lospec/, '');
-    if (!path.startsWith('/')) path = `/${path}`;
-    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
-    return path;
+function cleanPath(pathname: string): string {
+    return pathname.replace(/^\/api\/lospec\/?/, '').replace(/^\/+|\/+$/g, '');
 }
 
 /**
-* Checks whether the given normalized path matches any entry in the allowlist.
-* Supports slug subpaths by allowing any additional path segments.
+* Checks if a normalized path is allowed according to API_ENDPOINTS.
+* Supports slug subpaths automatically.
 *
-* @param path - Normalized path from the incoming request.
-* @returns True if the path is allowed, false otherwise.
+* @param path - Normalized path from cleanPath()
+* @returns True if path is allowed
 */
-function isPathAllowed(path: string) {
-    const normalized = path.replace(/^\/+/, ''); // remove leading slash
-    return API_ENDPOINTS.some(ep => normalized === ep || normalized.startsWith(ep + '/'));
+function isAllowed(path: string): boolean {
+    return API_ENDPOINTS.some(ep => path === ep || path.startsWith(ep + '/'));
 }
 
 /**
-* Generates caching headers for GET requests to optimize CDN caching and reduce repeated upstream calls.
+* Generates caching headers for GET requests to optimize CDN caching
+* and reduce repeated upstream calls.
 *
-* @param reqMethod - The HTTP method of the incoming request.
-* @param resOk - Whether the upstream response was successful (2xx).
-* @returns Headers object for caching, or empty if caching is disabled or not a GET request.
+* @param reqMethod - The HTTP method of the incoming request
+* @param resOk - Whether the upstream response was successful (2xx)
+* @returns Headers object for caching or empty object
 */
 function getCacheHeaders(reqMethod: string, resOk: boolean): Record<string, string> {
     if (IS_CACHING_ENABLED && reqMethod === 'GET' && resOk) {
@@ -73,24 +71,30 @@ function getCacheHeaders(reqMethod: string, resOk: boolean): Record<string, stri
 
 /**
 * Primary Edge Function handler for the Lospec API proxy.
-* Handles health checks, path validation, optional caching, slug support, and request forwarding.
+* Handles health checks, path validation, slug support, caching, and request forwarding.
+* Only GET requests are allowed; all others return 405.
 *
-* @param req - The incoming Request object from Vercel Edge.
-* @returns A Response object, either proxied from Lospec or an error.
+* @param req - Incoming Request object from Vercel Edge
+* @returns Response proxied from Lospec or error response
 */
 export default async function handler(req: Request): Promise<Response> {
+    // Reject non-GET requests immediately
+    if (req.method !== 'GET') {
+        return new Response(JSON.stringify({ error: 'Only GET requests are allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+    }
+
     const url = new URL(req.url);
-    const targetPath = normalizePath(url.pathname);
+    const cleanedPath = cleanPath(url.pathname);
 
     // Reject disallowed paths
-    if (!isPathAllowed(targetPath)) {
-        return new Response(JSON.stringify({ error: 'Forbidden path' }), { status: 403 });
+    if (!isAllowed(cleanedPath)) {
+        return new Response(JSON.stringify({ error: 'Forbidden path' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
     }
 
     /**
     * Special handling for health endpoint (no API key required)
     */
-    if (targetPath === '/health' || targetPath === 'health') {
+    if (cleanedPath === 'health') {
         try {
             const res = await fetch(`${API_BASE_URL}/health`, {
                 signal: AbortSignal.timeout(3000)
@@ -117,19 +121,19 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     /**
-    * Forward request to Lospec API.
-    * Supports GET/POST/PUT/DELETE with optional request body, query parameters, and slug paths.
+    * Forward GET request to Lospec API
+    * Supports slug subpaths automatically
     */
     try {
-        const upstreamRes = await fetch(`${API_BASE_URL}${targetPath}${url.search}`, {
-            method: req.method,
+        const upstreamUrl = `${API_BASE_URL}/api/${cleanedPath}${url.search}`;
+        const upstreamRes = await fetch(upstreamUrl, {
+            method: 'GET',
             headers: {
                 'Authorization': `Bearer ${API_KEY}`,
                 'Content-Type': 'application/json',
                 'User-Agent': req.headers.get('user-agent') || 'lospec-proxy'
             },
-            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-            body: req.method !== 'GET' && req.method !== 'HEAD' ? await req.text() : null
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
         });
 
         return new Response(upstreamRes.body, {
