@@ -22,7 +22,7 @@ export default async function handler(req: Request) {
 
     // validate the user-agent if REQUIRED_USER_AGENT is set
     const clientUA = req.headers.get('user-agent') || "";
-    if (REQUIRED_USER_AGENT && clientUA !== REQUIRED_USER_AGENT) {
+    if (REQUIRED_USER_AGENT !== "" && clientUA !== REQUIRED_USER_AGENT) {
         return new Response('Forbidden', { status: 403 });
     }
 
