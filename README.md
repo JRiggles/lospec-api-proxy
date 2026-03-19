@@ -20,21 +20,24 @@ This proxy securely forwards requests to the Lospec API while protecting your AP
 **Required:**
 - `LOSPEC_API_KEY`: Your Lospec API key. [Get your API key here.](https://api.lospec.com/docs/#description/getting-an-api-key)
 
-**Optional:**
+**Recommended:**
 - `REQUIRED_USER_AGENT`: If set, only requests with this User-Agent header are allowed (default: empty = no validation)
+
+  *See [Access Control](#access-control) below for more information*
+  
+**Optional:**
 - `CACHE_TTL`: Max age for CDN cache in seconds (default: `86400` = 24 hours)
 - `SWR_TTL`: Stale-while-revalidate TTL in seconds (default: `3600` = 1 hour)
 - `FETCH_TIMEOUT_MS`: Upstream request timeout in milliseconds (default: `5000`)
 
 Set these in your Vercel project dashboard under Settings → Environment Variables.
 
-For local development, create a `.env` file:
-
 ```shell
 # REQUIRED
-LOSPEC_API_KEY=your_api_key_here
-# OPTIONAL
+LOSPEC_API_KEY=<your api key here>
+# RECOMMENDED
 REQUIRED_USER_AGENT=""
+# OPTIONAL
 CACHE_TTL=86400
 SWR_TTL=3600
 FETCH_TIMEOUT_MS=5000
@@ -110,6 +113,9 @@ Returns:
 
 ### Access Control
 If `REQUIRED_USER_AGENT` is set, all non-debug requests must include that exact User-Agent header, or they'll receive a `403 Forbidden` response.
+You should set this variable to a unique User-Agent string and your application should make requests to the proxy with that same User-Agent in its header, otherwise any user agent can pass requests to the Lospec API via your proxy. 
+
+Setting this won't prevent determined users from abusing your API key
 
 Example with User-Agent validation:
 ```bash
