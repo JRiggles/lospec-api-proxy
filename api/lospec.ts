@@ -1,4 +1,4 @@
-export const config = {runtime: 'edge'};
+export const config = { runtime: 'edge' };
 
 const UPSTREAM_BASE_URL = 'https://api.lospec.com';
 
@@ -6,16 +6,7 @@ function normalizeEnvString(value: string | undefined): string {
     if (!value) {
         return '';
     }
-
-    const trimmed = value.trim();
-    if (
-        (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-        (trimmed.startsWith("'") && trimmed.endsWith("'"))
-    ) {
-        return trimmed.slice(1, -1);
-    }
-
-    return trimmed;
+    return value.trim().replace(/^['"]|['"]$/g, '');
 }
 
 // environment variables
@@ -30,6 +21,12 @@ if (!LOSPEC_API_KEY) {
     throw new Error('Missing LOSPEC_API_KEY environment variable.');
 }
 
+const CACHE_DISABLED_HEADERS = {
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    'CDN-Cache-Control': 'no-store',
+    'Vercel-CDN-Cache-Control': 'no-store',
+};
+
 function getSubPath(requestUrl: URL): string {
     const rewrittenSegments = requestUrl.searchParams.get('segments');
     const dynamicPath = requestUrl.searchParams.get('...path');
@@ -40,6 +37,56 @@ function getSubPath(requestUrl: URL): string {
         return dynamicPath.replace(/^\/+|\/+$/g, '');
     }
     return requestUrl.pathname.replace(/^\/api\/lospec\/?/, '').replace(/^\/+|\/+$/g, '');
+}
+
+function getDebugInfo(
+    requestUrl: URL,
+    subPath: string,
+    isHealth: boolean,
+    clientUA: string,
+    upstreamUrl: URL,
+    proxyHeaders: Headers
+): Response {
+    const debugHeaders = new Headers({
+        ...CACHE_DISABLED_HEADERS,
+        'Content-Type': 'application/json; charset=utf-8',
+    });
+
+    return Response.json({
+        debug: true,
+        request: {
+            method: 'GET',
+            incomingUrl: requestUrl.toString(),
+            subPath,
+            isHealth,
+            userAgent: clientUA,
+        },
+        accessControl: {
+            requiredUserAgent: REQUIRED_USER_AGENT || null,
+            isUserAgentAllowed: REQUIRED_USER_AGENT === '' || clientUA === REQUIRED_USER_AGENT,
+        },
+        outboundRequest: {
+            url: upstreamUrl.toString(),
+            method: 'GET',
+            headers: {
+                authorization: proxyHeaders.has('Authorization') ? 'Bearer [redacted]' : null,
+            },
+            timeoutMs: FETCH_TIMEOUT_MS,
+        },
+        cache: (isHealth || CACHE_TTL === '0')
+            ? {
+                cacheControl: CACHE_DISABLED_HEADERS['Cache-Control'],
+                cdnCacheControl: CACHE_DISABLED_HEADERS['CDN-Cache-Control'],
+                vercelCdnCacheControl: CACHE_DISABLED_HEADERS['Vercel-CDN-Cache-Control'],
+            }
+            : {
+                vercelCdnCacheControl:
+                    `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`,
+            },
+    }, {
+        status: 200,
+        headers: debugHeaders,
+    });
 }
 
 export default async function handler(req: Request) {
@@ -54,10 +101,10 @@ export default async function handler(req: Request) {
 
     const clientUA = req.headers.get('user-agent') || '';
     const isUserAgentAllowed = REQUIRED_USER_AGENT === '' || clientUA === REQUIRED_USER_AGENT;
-    // DEBUG: temporarily disablu user agen check
-    // if (!isDebug && !isUserAgentAllowed) {
-    //     return new Response('Forbidden', { status: 403 });
-    // }
+
+    if (!isDebug && !isUserAgentAllowed) {
+        return new Response('Forbidden', { status: 403 });
+    }
 
     const subPath = getSubPath(requestUrl);
     const isHealth = subPath === 'health';
@@ -78,48 +125,7 @@ export default async function handler(req: Request) {
     }
 
     if (isDebug) {
-        const debugHeaders = new Headers({
-            'Cache-Control': 'no-store, no-cache, must-revalidate',
-            'Content-Type': 'application/json; charset=utf-8',
-            'CDN-Cache-Control': 'no-store',
-            'Vercel-CDN-Cache-Control': 'no-store',
-        });
-
-        return Response.json({
-            debug: true,
-            request: {
-                method: 'GET',
-                incomingUrl: requestUrl.toString(),
-                subPath,
-                isHealth,
-                userAgent: clientUA,
-            },
-            accessControl: {
-                requiredUserAgent: REQUIRED_USER_AGENT || null,
-                isUserAgentAllowed,
-            },
-            outboundRequest: {
-                url: upstreamUrl.toString(),
-                method: 'GET',
-                headers: {
-                    authorization: proxyHeaders.has('Authorization') ? 'Bearer [redacted]' : null,
-                },
-                timeoutMs: FETCH_TIMEOUT_MS,
-            },
-            cache: isHealth
-                ? {
-                    cacheControl: 'no-store, no-cache, must-revalidate',
-                    cdnCacheControl: 'no-store',
-                    vercelCdnCacheControl: 'no-store',
-                }
-                : {
-                    vercelCdnCacheControl:
-                        `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`,
-                },
-        }, {
-            status: 200,
-            headers: debugHeaders,
-        });
+        return getDebugInfo(requestUrl, subPath, isHealth, clientUA, upstreamUrl, proxyHeaders);
     }
 
     const controller = new AbortController();
@@ -133,10 +139,10 @@ export default async function handler(req: Request) {
         });
 
         const resHeaders = new Headers(upstreamRes.headers);
-        if (isHealth) {
-            resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-            resHeaders.set('CDN-Cache-Control', 'no-store');
-            resHeaders.set('Vercel-CDN-Cache-Control', 'no-store');
+        if (isHealth || CACHE_TTL === '0') {
+            Object.entries(CACHE_DISABLED_HEADERS).forEach(([key, value]) => {
+                resHeaders.set(key, value);
+            });
         } else {
             resHeaders.set(
                 'Vercel-CDN-Cache-Control',
