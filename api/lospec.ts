@@ -21,18 +21,21 @@ const CACHE_DISABLED_HEADERS = {
     'Vercel-CDN-Cache-Control': 'no-store',
 };
 
+/**
+ * Resolves the requested Lospec sub-path from rewrite parameters or the raw pathname
+ */
 function getSubPath(requestUrl: URL): string {
-    const rewrittenSegments = requestUrl.searchParams.get('segments');
-    const dynamicPath = requestUrl.searchParams.get('...path');
-    if (rewrittenSegments) {
-        return rewrittenSegments.replace(/^\/+|\/+$/g, '');
-    }
-    if (dynamicPath) {
-        return dynamicPath.replace(/^\/+|\/+$/g, '');
-    }
-    return requestUrl.pathname.replace(/^\/api\/lospec\/?/, '').replace(/^\/+|\/+$/g, '');
+    const subPath =
+        requestUrl.searchParams.get('segments') ||
+        requestUrl.searchParams.get('...path') ||
+        requestUrl.pathname.replace(/^\/api\/lospec\/?/, '');
+
+    return subPath.replace(/^\/+|\/+$/g, '');
 }
 
+/**
+ * Returns a debug payload describing how the proxy would handle the current request
+ */
 function getDebugInfo(
     requestUrl: URL,
     subPath: string,
@@ -83,6 +86,9 @@ function getDebugInfo(
     });
 }
 
+/**
+ * Proxies GET requests to the Lospec API with optional User-Agent validation and cache control
+ */
 export default async function handler(req: Request) {
     if (req.method !== 'GET') {
         return new Response('Method Not Allowed', { status: 405 });
