@@ -1,17 +1,11 @@
 export const config = { runtime: 'edge' };
 
 const UPSTREAM_BASE_URL = 'https://api.lospec.com';
-
-function normalizeEnvString(value: string | undefined): string {
-    if (!value) {
-        return '';
-    }
-    return value.trim().replace(/^['"]|['"]$/g, '');
-}
-
 // environment variables
 const LOSPEC_API_KEY = process.env.LOSPEC_API_KEY;
-const REQUIRED_USER_AGENT = normalizeEnvString(process.env.REQUIRED_USER_AGENT);
+var rawEnvUserAgent = process.env.REQUIRED_USER_AGENT || '';
+// normalize REQUIRED_USER_AGENT str by trimming whitespace and removing surrounding quotes
+const REQUIRED_USER_AGENT = rawEnvUserAgent.trim().replace(/^['"]|['"]$/g, '');
 const CACHE_TTL = process.env.CACHE_TTL || '86400';
 const SWR_TTL = process.env.SWR_TTL || '3600';
 const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '5000', 10);
