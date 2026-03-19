@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lospec API Proxy</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #111318;
+            --card: #1a1f28;
+            --text: #e6edf7;
+            --muted: #a6b2c5;
+            --accent: #f5ae3e;
+            --border: #2e3644;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: radial-gradient(circle at top, #243046 0%, var(--bg) 55%);
+            color: var(--text);
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 1.5rem;
+        }
+
+        main {
+            max-width: 43.75rem;
+            background: var(--card);
+            border: 0.0625rem solid var(--border);
+            border-radius: 0.875rem;
+            padding: 1.75rem;
+            box-shadow: 0 0.875rem 2.5rem rgba(0, 0, 0, 0.38);
+        }
+
+        h1 {
+            margin: 0 0 0.625rem;
+            font-size: 2rem;
+            line-height: 1.2;
+        }
+
+        p {
+            margin: 0 0 1rem;
+            color: var(--muted);
+            line-height: 1.55;
+        }
+
+        .small {
+            font-size: 0.85em;
+            opacity: 0.75;
+            margin-top: 2rem;
+        }
+
+        ul {
+            margin: 0;
+            padding-left: 1.25rem;
+            line-height: 1.7;
+        }
+
+        li {
+            letter-spacing: 0.01em;
+            margin-bottom: 0.25rem;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration-thickness: 0.08em;
+            text-underline-offset: 0.16em;
+        }
+        /* external link indicator - arrow up right */
+        a.external::after {
+            content: " \2197";
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        code {
+            background: #0f141d;
+            border: 0.0625rem solid #2a3240;
+            border-radius: 0.375rem;
+            padding: 0.0625rem 0.375rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.95em;
+            color: #c8d6ea;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Lospec API Proxy</h1>
+        <p>
+            This is a lightweight proxy for the Lospec API running on Vercel Edge Functions.
+            If you are looking for API routes, start with <code>/api/lospec/health</code>.
+        </p>
+        <ul>
+            <li><a href="/api/lospec/health">Health check</a></li>
+            <li><a href="/api/lospec/api/v1/palettes/daily">Daily palette endpoint</a></li>
+            <li><a href="/api/lospec/api/v1/palettes/daily?debug=1">Debug example</a></li>
+            <!-- external links -->
+            <li><a class="external" href="https://api.lospec.com/docs" target="_blank" rel="noopener noreferrer">Lospec API documentation</a></li>
+            <li><a class="external" href="https://github.com/jriggles/lospec-api-proxy" target="_blank" rel="noopener noreferrer">Project repository</a></li>
+        </ul>
+        <p class="small">
+            &copy; 2026 J. Riggles (a.k.a. sudo whoami) &mdash; Not affiliated with Lospec.
+        </p>
+    </main>
+</body>
+</html>
