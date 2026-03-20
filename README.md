@@ -49,6 +49,8 @@ RATE_LIMIT_ENABLED=true
 RATE_LIMIT_REQUESTS=100
 RATE_LIMIT_WINDOW_MS=60000
 ```
+## Deploying Your Own
+> COMING SOON! 🚧
 
 ## Usage
 
@@ -77,7 +79,8 @@ The API health check endpoint (`/api/lospec/health`) does not require authentica
 If `REQUIRED_USER_AGENT` is set, all non-debug requests must include that exact User-Agent header, or they'll receive a `403 Forbidden` response.
 You should set this variable to a unique User-Agent string and your application should make requests to the proxy with that same User-Agent in its header, otherwise any user agent can pass requests to the Lospec API via your proxy.
 
-Setting this won't prevent determined users from abusing your API key
+> [!WARNING]
+> Setting this won't prevent determined users from abusing your API access via the proxy, but it should help cut down on misuse
 
 Example with User-Agent validation:
 ```bash
