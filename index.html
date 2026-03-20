@@ -28,15 +28,17 @@
             display: grid;
             place-items: center;
             padding: 1.5rem;
+            overflow-y: hidden;
         }
 
         main {
-            max-width: 43.75rem;
+            max-width: 42rem;
             background: var(--card);
-            border: 0.0625rem solid var(--border);
+            border: 1px solid var(--border);
             border-radius: 0.875rem;
             padding: 1.75rem;
-            box-shadow: 0 0.875rem 2.5rem rgba(0, 0, 0, 0.38);
+            box-shadow: 0 0.875rem 2.5rem rgba(0, 0, 0, 0.42);
+            text-wrap: balance;
         }
 
         h1 {
@@ -80,13 +82,17 @@
             opacity: 0.9;
         }
 
+        a ~ code {
+            margin-left: 0.5rem;
+        }
+
         code {
             background: #0f141d;
             border: 0.0625rem solid #2a3240;
             border-radius: 0.375rem;
             padding: 0.0625rem 0.375rem;
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            font-size: 0.95em;
+            font-size: 0.9rem;
             color: #c8d6ea;
         }
     </style>
@@ -96,18 +102,18 @@
         <h1>Lospec API Proxy</h1>
         <p>
             This is a lightweight proxy for the Lospec API running on Vercel Edge Functions.
-            If you are looking for API routes, start with <code>/api/lospec/health</code>.
+            If you are looking for API routes, start with an API health check.
         </p>
         <ul>
-            <li><a href="/api/lospec/health">Health check</a></li>
-            <li><a href="/api/lospec/api/v1/palettes/daily">Daily palette endpoint</a></li>
-            <li><a href="/api/lospec/api/v1/palettes/daily?debug=1">Debug example</a></li>
+            <li><a href="/api/lospec/health">Health check</a><code>/api/lospe/health</code></li>
+            <li><a href="/api/lospec/api/v1/palettes/daily">Daily palette endpoint</a> <code>/api/lospec/api/v1/palettes/daily</code></li>
+            <li><a href="/api/lospec/api/v1/palettes/daily?debug=1">Debug example</a> <code>/api/lospec/api/v1/palettes/daily?debug=1</code></li>
             <!-- external links -->
             <li><a class="external" href="https://api.lospec.com/docs" target="_blank" rel="noopener noreferrer">Lospec API documentation</a></li>
             <li><a class="external" href="https://github.com/jriggles/lospec-api-proxy" target="_blank" rel="noopener noreferrer">Project repository</a></li>
         </ul>
         <p class="small">
-            &copy; 2026 J. Riggles (a.k.a. sudo whoami) &mdash; Not affiliated with Lospec.
+            &copy; 2026 J. Riggles (a.k.a. sudo_whoami) &mdash; Not affiliated with Lospec.
         </p>
     </main>
 </body>
