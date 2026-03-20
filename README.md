@@ -14,7 +14,7 @@ This proxy securely forwards requests to the Lospec API while protecting your AP
 - **Request timeout**: Configurable upstream fetch timeout
 - **Built-in rate limiting**: Configurable per-IP limit window to reduce abuse and accidental request storms
 - **Debug mode**: Inspect request/response details with `?debug=1`
-- **GET-only**: Only GET requests are supported because that's what the Lospec API supports; other requests types will receive a `405 Method Not Allowed` response
+- **GET-only**: Only GET requests are supported because that's what the Lospec API supports; other request types will receive a `405 Method Not Allowed` response
 
 ## Environment Variables
 
