@@ -1,3 +1,7 @@
+import type { DebugContext } from '../lib/types';
+import { checkRateLimit, getClientIp, getRateLimitConfig } from '../lib/rateLimit';
+import type { RateLimitStatus } from '../lib/rateLimit';
+
 export const config = { runtime: 'edge' };
 
 const UPSTREAM_BASE_URL = 'https://api.lospec.com';
@@ -9,6 +13,7 @@ const REQUIRED_USER_AGENT = rawEnvUserAgent.trim().replace(/^['"]|['"]$/g, '');
 const CACHE_TTL = process.env.CACHE_TTL || '86400';
 const SWR_TTL = process.env.SWR_TTL || '3600';
 const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '5000', 10);
+const RATE_LIMIT_CONFIG = getRateLimitConfig(); // parsed from environment variables
 
 // validate environment on initialization
 if (!LOSPEC_API_KEY) {
@@ -36,14 +41,7 @@ function getSubPath(requestUrl: URL): string {
 /**
  * Returns a debug payload describing how the proxy would handle the current request
  */
-function getDebugInfo(
-    requestUrl: URL,
-    subPath: string,
-    isHealth: boolean,
-    clientUA: string,
-    upstreamUrl: URL,
-    proxyHeaders: Headers
-): Response {
+function getDebugInfo(context: DebugContext): Response {
     const debugHeaders = new Headers({
         ...CACHE_DISABLED_HEADERS,
         'Content-Type': 'application/json; charset=utf-8',
@@ -53,24 +51,32 @@ function getDebugInfo(
         debug: true,
         request: {
             method: 'GET',
-            incomingUrl: requestUrl.toString(),
-            subPath,
-            isHealth,
-            userAgent: clientUA,
+            incomingUrl: context.requestUrl.toString(),
+            subPath: context.subPath,
+            userAgent: context.clientUA,
+            clientIP: context.clientIP,
         },
         accessControl: {
             requiredUserAgent: REQUIRED_USER_AGENT || null,
-            isUserAgentAllowed: REQUIRED_USER_AGENT === '' || clientUA === REQUIRED_USER_AGENT,
+            isUserAgentAllowed: REQUIRED_USER_AGENT === '' || context.clientUA === REQUIRED_USER_AGENT,
+        },
+        rateLimit: {
+            enabled: RATE_LIMIT_CONFIG.enabled,
+            requestsPerWindow: RATE_LIMIT_CONFIG.requests,
+            windowMs: RATE_LIMIT_CONFIG.windowMs,
+            allowed: context.rateLimitStatus.allowed,
+            remaining: context.rateLimitStatus.remaining,
+            resetMs: context.rateLimitStatus.resetMs,
         },
         outboundRequest: {
-            url: upstreamUrl.toString(),
+            url: context.upstreamUrl.toString(),
             method: 'GET',
             headers: {
-                authorization: proxyHeaders.has('Authorization') ? 'Bearer [redacted]' : null,
+                authorization: context.proxyHeaders.has('Authorization') ? 'Bearer [redacted]' : null,
             },
             timeoutMs: FETCH_TIMEOUT_MS,
         },
-        cache: (isHealth || CACHE_TTL === '0')
+        cache: (context.subPath === 'health' || CACHE_TTL === '0')
             ? {
                 cacheControl: CACHE_DISABLED_HEADERS['Cache-Control'],
                 cdnCacheControl: CACHE_DISABLED_HEADERS['CDN-Cache-Control'],
@@ -87,7 +93,45 @@ function getDebugInfo(
 }
 
 /**
- * Proxies GET requests to the Lospec API with optional User-Agent validation and cache control
+ * Builds the headers to be sent upstream to the Lospec API
+ */
+function setProxyHeaders(isHealth: boolean): Headers {
+    const headers = new Headers();
+    if (!isHealth) {
+        // only add Authorization header for non-health requests to avoid exposing it unnecessarily
+        headers.set('Authorization', `Bearer ${LOSPEC_API_KEY}`);
+    }
+    return headers;
+}
+
+/**
+ * Builds the response headers to be sent back to the client
+ */
+function setResponseHeaders(
+    upstreamHeaders: Headers,
+    isHealth: boolean,
+    rateLimitStatus: RateLimitStatus
+): Headers {
+    const headers = new Headers(upstreamHeaders);
+    if (isHealth || CACHE_TTL === '0') {
+        Object.entries(CACHE_DISABLED_HEADERS).forEach(([key, value]) => {
+            headers.set(key, value);
+        });
+    } else {
+        headers.set(
+            'Vercel-CDN-Cache-Control',
+            `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`
+        );
+    }
+    headers.set('RateLimit-Limit', RATE_LIMIT_CONFIG.requests.toString());
+    headers.set('RateLimit-Remaining', rateLimitStatus.remaining.toString());
+    headers.set('RateLimit-Reset', (Date.now() + rateLimitStatus.resetMs).toString());
+    return headers;
+}
+
+/**
+ * Proxies GET requests to the Lospec API with optional User-Agent validation, rate limiting and
+ * cache control
  */
 export default async function handler(req: Request) {
     if (req.method !== 'GET') {
@@ -100,10 +144,25 @@ export default async function handler(req: Request) {
     );
 
     const clientUA = req.headers.get('user-agent') || '';
+    const clientIP = getClientIp(req);
     const isUserAgentAllowed = REQUIRED_USER_AGENT === '' || clientUA === REQUIRED_USER_AGENT;
 
     if (!isDebug && !isUserAgentAllowed) {
         return new Response('Forbidden', { status: 403 });
+    }
+
+    const rateLimitStatus = checkRateLimit(clientIP);
+    if (!isDebug && !rateLimitStatus.allowed) {
+        const resetSecs = Math.ceil(rateLimitStatus.resetMs / 1000);
+        return new Response('Too Many Requests', {
+            status: 429,
+            headers: {
+                'Retry-After': resetSecs.toString(),
+                'RateLimit-Limit': RATE_LIMIT_CONFIG.requests.toString(),
+                'RateLimit-Remaining': '0',
+                'RateLimit-Reset': (Date.now() + rateLimitStatus.resetMs).toString(),
+            },
+        });
     }
 
     const subPath = getSubPath(requestUrl);
@@ -112,20 +171,26 @@ export default async function handler(req: Request) {
     const upstreamSearchParams = new URLSearchParams(requestUrl.searchParams);
     upstreamSearchParams.delete('debug');
     upstreamSearchParams.delete('segments');
-    upstreamSearchParams.delete('...path');
+    upstreamSearchParams.delete('...path');  // inserted by Vercel
 
     const upstreamUrl = new URL(isHealth ? '/health' : `/${subPath}`, UPSTREAM_BASE_URL);
     if (!isHealth) {
         upstreamUrl.search = upstreamSearchParams.toString();
     }
 
-    const proxyHeaders = new Headers();
-    if (!isHealth) {
-        proxyHeaders.set('Authorization', `Bearer ${LOSPEC_API_KEY}`);
-    }
+    const proxyHeaders = setProxyHeaders(isHealth);
 
     if (isDebug) {
-        return getDebugInfo(requestUrl, subPath, isHealth, clientUA, upstreamUrl, proxyHeaders);
+        const debugContext: DebugContext = {
+            requestUrl,
+            subPath,
+            clientUA,
+            clientIP,
+            rateLimitStatus,
+            upstreamUrl,
+            proxyHeaders,
+        };
+        return getDebugInfo(debugContext);
     }
 
     const controller = new AbortController();
@@ -138,17 +203,7 @@ export default async function handler(req: Request) {
             signal: controller.signal,
         });
 
-        const resHeaders = new Headers(upstreamRes.headers);
-        if (isHealth || CACHE_TTL === '0') {
-            Object.entries(CACHE_DISABLED_HEADERS).forEach(([key, value]) => {
-                resHeaders.set(key, value);
-            });
-        } else {
-            resHeaders.set(
-                'Vercel-CDN-Cache-Control',
-                `public, max-age=120, s-maxage=${CACHE_TTL}, stale-while-revalidate=${SWR_TTL}`
-            );
-        }
+        const resHeaders = setResponseHeaders(upstreamRes.headers, isHealth, rateLimitStatus);
 
         return new Response(upstreamRes.body, {
             status: upstreamRes.status,
