@@ -50,7 +50,25 @@ RATE_LIMIT_REQUESTS=100
 RATE_LIMIT_WINDOW_MS=60000
 ```
 ## Deploying Your Own
-> COMING SOON! 🚧
+
+Use the button below to instantly clone this repo to Vercel and create your own hosted Lospec API proxy without exposing your API key in client code.
+
+> [!TIP]
+> If you don't already have a Vercel account, you can create one during the deployment process.
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.comjriggles%2Flospec-api-proxy&env=LOSPEC_API_KEY,REQUIRED_USER_AGENT,CACHE_TTL,SWR_TTL,FETCH_TIMEOUT,RATE_LIMIT_ENABLED,RATE_LIMIT_REQUESTS,RATE_LIMIT_WINDOW_MS&envDefaults=%7B%22REQUIRED_USER_AGENT%22%3A%22%5C%22%5C%22%22%2C%22CACHE_TTL%22%3A%2286400%22%2C%22SWR_TTL%22%3A%223600%22%2C%22FETCH_TIMEOUT%22%3A%225000%22%2C%22RATE_LIMIT_ENABLED%22%3A%22true%22%2C%22RATE_LIMIT_REQUESTS%22%3A%22100%22%2C%22RATE_LIMIT_WINDOW_MS%22%3A%2260000%22%7D&envDescription=Set%20your%20Lospec%20API%20key%20and%20optional%20proxy%20settings&envLink=https%3A%2F%2Fgithub.com%2Fjriggles%2Flospec-api-proxy%23environment-variables&project-name=lospec-api-proxy&repository-name=lospec-api-proxy)
+
+After clicking **Deploy**, set at least:
+- `LOSPEC_API_KEY` (required)
+
+Optional defaults can be set later in Vercel project settings:
+- `REQUIRED_USER_AGENT` (recommended)
+- `CACHE_TTL`
+- `SWR_TTL`
+- `FETCH_TIMEOUT_MS`
+- `RATE_LIMIT_ENABLED`
+- `RATE_LIMIT_REQUESTS`
+- `RATE_LIMIT_WINDOW_MS`
 
 ## Usage
 
