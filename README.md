@@ -95,7 +95,10 @@ The API health check endpoint (`/api/lospec/health`) does not require authentica
 
 ### Access Control
 If `REQUIRED_USER_AGENT` is set, all non-debug requests must include that exact User-Agent header, or they'll receive a `403 Forbidden` response.
+
 You should set this variable to a unique User-Agent string and your application should make requests to the proxy with that same User-Agent in its header, otherwise any user agent can pass requests to the Lospec API via your proxy.
+
+Typically, your user agent string should follow the conventional format `<application name>/<version number>`, e.g.: `MyApp/1.0`.
 
 > [!WARNING]
 > Setting this won't prevent determined users from abusing your API access via the proxy, but it should help cut down on misuse
